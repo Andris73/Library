@@ -1,0 +1,108 @@
+//
+//  CollectionView.swift
+//  Library
+//
+//  Created by Rasmus Krämer on 16.07.25.
+//
+
+import SwiftUI
+struct CollectionView: View {
+    @Environment(Satellite.self) private var satellite
+    @Environment(OfflineMode.self) private var offlineMode
+    @State private var viewModel: CollectionViewModel
+
+    init(_ collection: ItemCollection) {
+        _viewModel = .init(initialValue: .init(collection: collection))
+    }
+
+    @ViewBuilder
+    private var listPresentation: some View {
+        List {
+            if let description = viewModel.collection.description {
+                Button {
+                    satellite.present(.description(viewModel.collection))
+                } label: {
+                    Text(description)
+                        .lineLimit(5)
+                }
+                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
+                .listRowInsets(.init(top: 0, leading: 20, bottom: 12, trailing: 20))
+            }
+
+            if let highlighted = viewModel.highlighted {
+                PlayButton(item: highlighted)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.init(top: 0, leading: 20, bottom: 6, trailing: 20))
+            }
+
+            if let audiobooks = viewModel.audiobooks {
+                AudiobookList(sections: audiobooks) { _ in }
+            }
+        }
+        .listStyle(.plain)
+        .navigationLinkIndicatorVisibility(.hidden)
+    }
+
+    var body: some View {
+        Group {
+            if viewModel.collection.items.isEmpty {
+                EmptyCollectionView(systemImage: offlineMode.isEnabled ? "exclamationmark.triangle" : "questionmark.folder")
+            } else {
+                listPresentation
+            }
+        }
+        .id(viewModel.id)
+        .navigationTitle(viewModel.collection.name)
+        .hapticFeedback(.error, trigger: viewModel.notifyError)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("action.edit", systemImage: "pencil") {
+                    satellite.present(.editCollection(viewModel.collection))
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu("item.options", systemImage: "ellipsis") {
+                    ItemConfigureButton(itemID: viewModel.collection.id)
+
+                    Divider()
+
+                    if viewModel.collection.id.type == .collection {
+                        Button("item.collection.createPlaylist", systemImage: ItemIdentifier.ItemType.playlist.icon) {
+                            viewModel.createPlaylist()
+                        }
+                    }
+
+                    Button("action.delete", systemImage: "trash", role: .destructive) {
+                        viewModel.delete()
+                    }
+                }
+            }
+        }
+        .environment(viewModel)
+        .environment(\.displayContext, .collection(viewModel.collection))
+        .refreshable {
+            viewModel.refresh()
+        }
+
+        .userActivity("com.Library.item") { activity in
+            activity.title = viewModel.collection.name
+            activity.isEligibleForHandoff = true
+            activity.isEligibleForPrediction = true
+            activity.persistentIdentifier = viewModel.collection.id.description
+
+            Task {
+                try await activity.webpageURL = viewModel.collection.id.url
+            }
+        }
+    }
+}
+
+#if DEBUG
+#Preview {
+    NavigationStack {
+        CollectionView(.collectionFixture)
+    }
+    .previewEnvironment()
+}
+#endif

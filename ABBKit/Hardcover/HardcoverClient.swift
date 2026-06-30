@@ -48,7 +48,7 @@ public struct HardcoverBookSeries: Sendable, Hashable {
 public struct HardcoverClient {
     public static let endpoint = URL(string: "https://api.hardcover.app/v1/graphql")!
 
-    private static let logger = Logger(subsystem: "com.bookwave.ABBKit", category: "Hardcover")
+    private static let logger = Logger(subsystem: "com.Library.ABBKit", category: "Hardcover")
 
     public enum HardcoverError: Error {
         case invalidToken

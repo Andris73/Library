@@ -1,0 +1,48 @@
+//
+//  API+Author.swift
+//  LibraryKit
+//
+
+import Foundation
+
+public extension APIClient {
+    func author(with identifier: ItemIdentifier) async throws -> Person {
+        guard let person = Person(author: try await response(APIRequest(path: "api/authors/\(identifier.pathComponent)", method: .get, ttl: 12)), connectionID: connectionID) else {
+            throw APIClientError.notFound
+        }
+
+        return person
+    }
+
+    func authors(from libraryID: String, sortOrder: AuthorSortOrder, ascending: Bool, limit: Int, page: Int) async throws -> ([Person], Int) {
+        let response = try await response(APIRequest<ResultResponse>(path: "api/libraries/\(libraryID)/authors", method: .get, query: [
+            .init(name: "sort", value: sortOrder.queryValue),
+            .init(name: "desc", value: ascending ? "0" : "1"),
+            .init(name: "limit", value: String(limit)),
+            .init(name: "page", value: String(page)),
+        ], ttl: 12))
+
+        return (response.results.compactMap { Person(author: $0, connectionID: connectionID) }, response.total)
+    }
+
+    func authorID(from libraryID: String, name: String) async throws -> ItemIdentifier {
+        let response = try await response(APIRequest<SearchResponse>(path: "api/libraries/\(libraryID)/search", method: .get, query: [
+            URLQueryItem(name: "q", value: name),
+            URLQueryItem(name: "limit", value: "1"),
+        ], ttl: 12))
+
+        if let id = response.authors?.first?.id {
+            return .init(primaryID: id,
+                         groupingID: nil,
+                         libraryID: libraryID,
+                         connectionID: connectionID,
+                         type: .author)
+        }
+
+        throw APIClientError.notFound
+    }
+
+    func authorID(from library: LibraryIdentifier, name: String) async throws -> ItemIdentifier {
+        try await authorID(from: library.libraryID, name: name)
+    }
+}

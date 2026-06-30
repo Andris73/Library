@@ -1,0 +1,34 @@
+//
+//  OutdatedServerRow.swift
+//  Library
+//
+//  Created by Rasmus Krämer on 23.08.25.
+//
+
+import SwiftUI
+import LibraryKit
+
+struct OutdatedServerRow: View {
+    let version: String?
+
+    var isUsingOutdatedServer: Bool {
+        LibraryKit.isUsingOutdatedServer(version)
+    }
+
+    var body: some View {
+        if isUsingOutdatedServer {
+            Text("connection.outdatedServer")
+                .foregroundStyle(.orange)
+        }
+    }
+}
+
+#Preview {
+    List {
+        ForEach(["1.1.1", "2.25.4", "2.26.0", "2.28.0", "3.0.0"], id: \.self) { version in
+            Section(version) {
+                OutdatedServerRow(version: version)
+            }
+        }
+    }
+}
