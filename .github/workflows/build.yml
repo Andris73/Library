@@ -1,0 +1,108 @@
+name: Build and publish
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.0"
+
+      - name: Install Xcode platforms
+        run: |
+          xcrun simctl list > /dev/null
+          xcodebuild -downloadPlatform iOS
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          cp Configuration/Debug.xcconfig.template Configuration/Debug.xcconfig
+          xcodegen generate
+
+      - name: Get commit info
+        id: commitinfo
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Build archive
+        run: |
+          xcodebuild -scheme Library \
+            -configuration Release \
+            -archivePath build/Library.xcarchive \
+            archive \
+            -skipPackagePluginValidation \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS=""
+
+      - name: Package IPA
+        id: package
+        run: |
+          mkdir -p Payload
+          cp -r build/Library.xcarchive/Products/Applications/Library.app Payload/
+          IPA_NAME="Library_${{ steps.commitinfo.outputs.sha_short }}.ipa"
+          zip -r "$IPA_NAME" Payload
+          echo "ipa_name=$IPA_NAME" >> $GITHUB_OUTPUT
+          cp "$IPA_NAME" /tmp/Library.ipa
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "build/Library.xcarchive/Products/Applications/Library.app/Info.plist")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "build/Library.xcarchive/Products/Applications/Library.app/Info.plist")
+          SIZE=$(stat -f%z "$IPA_NAME")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build=$BUILD" >> $GITHUB_OUTPUT
+          echo "size=$SIZE" >> $GITHUB_OUTPUT
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ steps.package.outputs.ipa_name }}"
+          path: /tmp/Library.ipa
+          if-no-files-found: error
+
+      - name: Publish to combined AltStore source
+        if: github.ref_name == github.event.repository.default_branch
+        env:
+          APP_ID: library
+          VERSION: "${{ steps.package.outputs.version }}"
+          BUILD: "${{ steps.package.outputs.build }}"
+          SIZE: "${{ steps.package.outputs.size }}"
+          SHA_SHORT: "${{ steps.commitinfo.outputs.sha_short }}"
+          DATE: "${{ steps.commitinfo.outputs.date }}"
+          ALTSTORE_TOKEN: "${{ secrets.ALTSTORE_TOKEN }}"
+        run: |
+          if [ -z "$ALTSTORE_TOKEN" ]; then
+            echo "ALTSTORE_TOKEN not set — skipping publish. IPA is available as a build artifact."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            rm -rf /tmp/altstore
+            git clone --depth 1 "https://x-access-token:${ALTSTORE_TOKEN}@github.com/Andris73/altstore.git" /tmp/altstore
+            mkdir -p /tmp/altstore/ipas /tmp/altstore/icons /tmp/altstore/tools/apps
+            cp /tmp/Library.ipa /tmp/altstore/ipas/library.ipa
+            cp "$GITHUB_WORKSPACE/altstore/library.json" /tmp/altstore/tools/apps/library.json
+            if ( cd /tmp/altstore \
+                 && python3 tools/update_app.py \
+                 && git config user.name "github-actions" \
+                 && git config user.email "github-actions@github.com" \
+                 && git add apps.json ipas/library.ipa tools/apps/library.json \
+                 && { git commit -m "Library ${VERSION} (build ${BUILD})" || exit 0; } \
+                 && git push ); then
+              echo "Published Library ${VERSION} (build ${BUILD}) to the combined source"
+              break
+            fi
+            echo "Publish attempt ${attempt} failed (possible push race); retrying…"
+            sleep $((RANDOM % 5 + 3))
+          done

@@ -1,0 +1,10 @@
+{
+  "name": "Library",
+  "bundleIdentifier": "com.library.app",
+  "developerName": "Andris73",
+  "subtitle": "Browse, download, and manage your ebook collection",
+  "localizedDescription": "Library is a native iOS app for browsing, downloading, and managing ebooks from self-hosted book servers. Discover new books, organise your collection, and keep your library synced — no audio playback, just books.",
+  "iconURL": "https://raw.githubusercontent.com/Andris73/altstore/master/icons/library.png",
+  "downloadURL": "https://github.com/Andris73/altstore/raw/master/ipas/library.ipa",
+  "minOSVersion": "26.0"
+}
